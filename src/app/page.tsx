@@ -19,10 +19,19 @@ type CreateEventRequest = {
   description: string;
 };
 
+type SituationState = {
+  statusByLocation: {
+    [location: string]: string;
+  };
+};
+
+
 function App() {
   const [events, setEvents] = useState<Event[]>([]);
 
   const [error, setError] = useState<string | null>(null);
+
+  const [situation, setSituation] = useState<SituationState | null>(null);
 
   const [form, setForm] = useState<CreateEventRequest>({
     type: "ALERT",
@@ -30,6 +39,13 @@ function App() {
     location: "",
     description: "",
   });
+
+  const fetchSituation = () => {
+  fetch("http://localhost:8080/api/events/situation")
+    .then((res) => res.json())
+    .then((data) => setSituation(data))
+    .catch((err) => console.error(err));
+};
 
   const fetchEvents = () => {
     fetch("http://localhost:8080/api/events")
@@ -40,8 +56,10 @@ function App() {
 
   useEffect(() => {
     fetchEvents();
+    fetchSituation();
   }, []);
 
+  
 /*  useEffect(() => {
     fetch("http://localhost:8080/api/events")
       .then((res) => res.json())
@@ -74,6 +92,7 @@ function App() {
     });
 
     fetchEvents();
+    fetchSituation();
   };
   
   return (
@@ -138,10 +157,39 @@ function App() {
         {events.map((event) => (
           <li key={event.id}>
             <strong>{event.type}</strong> – {event.location} (
-            {event.severity})
+            {event.severity}): {event.description}, {new Date(event.timestamp).toLocaleString()}
           </li>
         ))}
       </ul>
+
+      <h2>Situation State</h2>
+
+      {!situation && <p>Loading situation...</p>}
+
+      {situation && (
+        <ul>
+          {Object.entries(situation.statusByLocation).map(
+            ([location, status]) => (
+              <li key={location}>
+                <strong>{location}</strong>:{" "}
+                <span
+                  style={{
+                    color:
+                      status === "OPEN"
+                        ? "red"
+                        : status === "ACKNOWLEDGED"
+                          ? "orange"
+                          : "green",
+                  }}
+                >
+                  {status}
+                </span>
+              </li>
+            )
+          )}
+        </ul>
+      )}
+
     </div>
   );
 }
