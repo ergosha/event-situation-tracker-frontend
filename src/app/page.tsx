@@ -2,298 +2,543 @@
 
 import { useEffect, useState } from "react";
 
+const API = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080") + "/api";
 
-type Event = {
+type Crisis = {
   id: string;
   type: string;
-  severity: string;
-  location: string;
+  status: string;
+  priority: string;
+  title: string;
   description: string;
-  timestamp: string;
+  location: string;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt: string | null;
+  closedAt: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  eventCount: number;
 };
 
-type CreateEventRequest = {
+type CrisisEvent = {
+  id: string;
   type: string;
-  severity: string;
-  location: string;
+  severity: string | null;
+  timestamp: string;
   description: string;
 };
 
-type SituationState = {
-  statusByLocation: {
-    [location: string]: string;
-  };
-};
-
-function App() {
-  const [events, setEvents] = useState<Event[]>([]);
+export default function Page() {
+  const [crises, setCrises] = useState<Crisis[]>([]);
+  const [selectedCrisis, setSelectedCrisis] = useState<Crisis | null>(null);
+  const [events, setEvents] = useState<CrisisEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [situation, setSituation] = useState<SituationState | null>(null);
-  const [form, setForm] = useState<CreateEventRequest>({
-    type: "ALERT",
-    severity: "LOW",
+  const [loading, setLoading] = useState(false);
+
+  // Filter & Form states
+  const [filterStatus, setFilterStatus] = useState("ONGOING");
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [createForm, setCreateForm] = useState({
+    type: "MEDICAL",
+    priority: "URGENT",
+    title: "",
     location: "",
     description: "",
   });
 
-  const fetchSituation = () => {
-    fetch("http://localhost:8080/api/events/situation")
-      .then((res) => res.json())
-      .then((data) => setSituation(data))
-      .catch((err) => console.error(err));
+  const [eventForm, setEventForm] = useState({
+    type: "DISPATCH",
+    severity: "HIGH",
+    description: "",
+  });
+
+  // Load crises
+  const fetchCrises = async (status?: string) => {
+    try {
+      setLoading(true);
+      let url = `${API}/crises`;
+      if (status && status !== "ALL") {
+        url = `${API}/crises/status/${status}`;
+      }
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Status ${res.status}`);
+      const data = await res.json();
+      setCrises(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("fetchCrises:", err);
+      setError("Failed to load crises");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const fetchEvents = () => {
-    fetch("http://localhost:8080/api/events")
-      .then((res) => res.json())
-      .then((data) => setEvents(data))
-      .catch((err) => console.error(err));
+  // Load crisis details & events
+  const fetchCrisisDetail = async (crisisId: string) => {
+    try {
+      const [crisisRes, eventsRes] = await Promise.all([
+        fetch(`${API}/crises/${crisisId}`),
+        fetch(`${API}/crises/${crisisId}/events`),
+      ]);
+
+      if (!crisisRes.ok || !eventsRes.ok) throw new Error("Failed to fetch");
+
+      const crisis = await crisisRes.json();
+      const eventsData = await eventsRes.json();
+
+      setSelectedCrisis(crisis);
+      setEvents(Array.isArray(eventsData) ? eventsData : []);
+    } catch (err) {
+      console.error("fetchCrisisDetail:", err);
+      setError("Failed to load crisis details");
+    }
   };
 
-  useEffect(() => {
-    fetchEvents();
-    fetchSituation();
-  }, []);
-  
-  const createEvent = async (e: React.FormEvent) => {
+  // Create crisis
+  const handleCreateCrisis = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    const response = await fetch("http://localhost:8080/api/events", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(form),
-    });
+    try {
+      const res = await fetch(`${API}/crises`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(createForm),
+      });
 
-    if (!response.ok) {
-      setError("Failed to create event");
-      return;
+      if (!res.ok) throw new Error(`Create failed: ${res.status}`);
+
+      setCreateForm({
+        type: "MEDICAL",
+        priority: "URGENT",
+        title: "",
+        location: "",
+        description: "",
+      });
+      setShowCreateForm(false);
+      await fetchCrises(filterStatus);
+    } catch (err: any) {
+      setError(err?.message ?? "Failed to create crisis");
     }
-
-    setForm({
-      type: "ALERT",
-      severity: "LOW",
-      location: "",
-      description: "",
-    });
-
-    fetchEvents();
-    fetchSituation();
   };
 
-  const getSeverityColor = (severity: string): string => {
-    switch (severity) {
-      case "HIGH":
-        return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
-      case "MEDIUM":
-        return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200";
+  // Update crisis status
+  const handleUpdateStatus = async (crisisId: string, newStatus: string) => {
+    try {
+      const res = await fetch(`${API}/crises/${crisisId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+
+      if (!res.ok) throw new Error("Update failed");
+      const updated = await res.json();
+      setSelectedCrisis(updated);
+      await fetchCrises(filterStatus);
+    } catch (err) {
+      console.error("Update status:", err);
+      setError("Failed to update status");
+    }
+  };
+
+  // Update crisis priority
+  const handleUpdatePriority = async (crisisId: string, newPriority: string) => {
+    try {
+      const res = await fetch(`${API}/crises/${crisisId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ priority: newPriority }),
+      });
+
+      if (!res.ok) throw new Error("Update failed");
+      const updated = await res.json();
+      setSelectedCrisis(updated);
+      await fetchCrises(filterStatus);
+    } catch (err) {
+      console.error("Update priority:", err);
+      setError("Failed to update priority");
+    }
+  };
+
+  // Add event to crisis
+  const handleAddEvent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCrisis) return;
+    setError(null);
+
+    try {
+      const res = await fetch(`${API}/crises/${selectedCrisis.id}/events`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(eventForm),
+      });
+
+      if (!res.ok) throw new Error("Add event failed");
+
+      setEventForm({ type: "DISPATCH", severity: "HIGH", description: "" });
+      await fetchCrisisDetail(selectedCrisis.id);
+    } catch (err: any) {
+      setError(err?.message ?? "Failed to add event");
+    }
+  };
+
+  // Initial load
+  useEffect(() => {
+    fetchCrises(filterStatus);
+  }, [filterStatus]);
+
+  const getPriorityColor = (priority: string) => {
+    switch (priority) {
+      case "CRITICAL":
+        return "bg-red-100 border-red-300 text-red-900";
+      case "EMERGENCY":
+        return "bg-orange-100 border-orange-300 text-orange-900";
+      case "URGENT":
+        return "bg-yellow-100 border-yellow-300 text-yellow-900";
       default:
-        return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
+        return "bg-blue-100 border-blue-300 text-blue-900";
     }
   };
 
-  const getStatusColor = (status: string): string => {
+  const getStatusColor = (status: string) => {
     switch (status) {
       case "OPEN":
-        return "text-red-600 dark:text-red-400 font-semibold";
-      case "ACKNOWLEDGED":
-        return "text-yellow-600 dark:text-yellow-400 font-semibold";
+        return "bg-red-100 text-red-800";
+      case "ONGOING":
+        return "bg-yellow-100 text-yellow-800";
+      case "RESOLVED":
+        return "bg-green-100 text-green-800";
+      case "CLOSED":
+        return "bg-gray-100 text-gray-800";
       default:
-        return "text-green-600 dark:text-green-400 font-semibold";
+        return "bg-gray-50 text-gray-800";
     }
   };
-  
+
+  const getSeverityColor = (severity: string | null) => {
+    if (!severity) return "bg-gray-100 text-gray-700";
+    switch (severity) {
+      case "CRITICAL":
+        return "bg-red-100 text-red-700";
+      case "HIGH":
+        return "bg-orange-100 text-orange-700";
+      case "MEDIUM":
+        return "bg-yellow-100 text-yellow-700";
+      default:
+        return "bg-green-100 text-green-700";
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 py-8 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-4xl mx-auto">
+    <div className="min-h-screen py-8 px-4">
+      <div className="container">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl sm:text-5xl font-bold text-slate-900 dark:text-white mb-2">
-            📊 Event Tracker
-          </h1>
-          <p className="text-lg text-slate-600 dark:text-slate-400">
-            Monitor and manage situational events
-          </p>
-        </div>
+        <header className="mb-8 flex justify-between items-center">
+          <div>
+            <h1 className="text-4xl font-bold">🚨 Crisis Tracker</h1>
+            <p className="text-muted text-sm mt-1">Manage crises and events in real-time</p>
+          </div>
+          <button onClick={() => setShowCreateForm(!showCreateForm)} className="btn btn-primary">
+            {showCreateForm ? "Cancel" : "➕ New Crisis"}
+          </button>
+        </header>
+
+        {/* Error message */}
+        {error && <div className="mb-4 p-3 bg-red-100 text-red-800 rounded">{error}</div>}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Create Event Form */}
-          <div className="lg:col-span-2">
-            <div className="bg-white dark:bg-slate-900 rounded-lg shadow-sm border border-slate-200 dark:border-slate-800 p-6 mb-6">
-              <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-4 flex items-center">
-                <span className="text-2xl mr-2">➕</span>
-                Create Event
-              </h2>
+          {/* Left: Crisis List */}
+          <div className="lg:col-span-1">
+            <div className="card card-sm">
+              <h2 className="font-semibold mb-3">Crises</h2>
 
-              {error && (
-                <div className="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md text-red-700 dark:text-red-200">
-                  {error}
-                </div>
-              )}
+              {/* Filter buttons */}
+              <div className="flex gap-2 mb-4 flex-wrap">
+                {["ONGOING", "OPEN", "RESOLVED", "ALL"].map((status) => (
+                  <button
+                    key={status}
+                    onClick={() => setFilterStatus(status)}
+                    className={`px-3 py-1 text-xs rounded ${
+                      filterStatus === status
+                        ? "bg-blue-600 text-white"
+                        : "bg-gray-200 text-gray-700"
+                    }`}
+                  >
+                    {status}
+                  </button>
+                ))}
+              </div>
 
-              <form onSubmit={createEvent} className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
-                      Event Type
-                    </label>
-                    <select
-                      value={form.type}
-                      onChange={(e) => setForm({ ...form, type: e.target.value })}
-                      className="w-full px-4 py-2 border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
-                    >
-                      <option value="ALERT">ALERT</option>
-                      <option value="UPDATE">UPDATE</option>
-                      <option value="RESOLVE">RESOLVE</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
-                      Severity
-                    </label>
-                    <select
-                      value={form.severity}
-                      onChange={(e) => setForm({ ...form, severity: e.target.value })}
-                      className="w-full px-4 py-2 border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
-                    >
-                      <option value="LOW">LOW</option>
-                      <option value="MEDIUM">MEDIUM</option>
-                      <option value="HIGH">HIGH</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
-                    Location
-                  </label>
-                  <input
-                    type="text"
-                    value={form.location}
-                    onChange={(e) => setForm({ ...form, location: e.target.value })}
-                    placeholder="Enter location"
-                    required
-                    className="w-full px-4 py-2 border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
-                    Description
-                  </label>
-                  <textarea
-                    value={form.description}
-                    onChange={(e) => setForm({ ...form, description: e.target.value })}
-                    placeholder="Enter event description"
-                    required
-                    rows={3}
-                    className="w-full px-4 py-2 border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition resize-none"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg transition duration-200 transform hover:scale-105"
-                >
-                  Create Event
-                </button>
-              </form>
-            </div>
-
-            {/* Events List */}
-            <div className="bg-white dark:bg-slate-900 rounded-lg shadow-sm border border-slate-200 dark:border-slate-800 p-6">
-              <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-4 flex items-center">
-                <span className="text-2xl mr-2">📝</span>
-                Recent Events
-              </h2>
-
-              {events.length === 0 ? (
-                <p className="text-slate-500 dark:text-slate-400 text-center py-8">
-                  No events yet. Create one to get started!
-                </p>
+              {/* Crisis list */}
+              {loading ? (
+                <p className="text-sm text-gray-500">Loading...</p>
+              ) : crises.length === 0 ? (
+                <p className="text-sm text-gray-500">No crises</p>
               ) : (
-                <div className="space-y-3">
-                  {events.map((event) => (
-                    <div
-                      key={event.id}
-                      className="p-4 border border-slate-200 dark:border-slate-700 rounded-lg hover:shadow-md transition bg-slate-50 dark:bg-slate-800"
+                <ul className="space-y-2">
+                  {crises.map((crisis) => (
+                    <li
+                      key={crisis.id}
+                      onClick={() => fetchCrisisDetail(crisis.id)}
+                      className={`p-3 rounded cursor-pointer text-sm border-l-4 ${getPriorityColor(
+                        crisis.priority
+                      )} ${
+                        selectedCrisis?.id === crisis.id ? "ring-2 ring-blue-500" : ""
+                      }`}
                     >
-                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-blue-600 dark:text-blue-400">
-                            {event.type}
-                          </span>
-                          <span
-                            className={`px-3 py-1 rounded-full text-xs font-semibold ${getSeverityColor(
-                              event.severity
-                            )}`}
-                          >
-                            {event.severity}
-                          </span>
-                        </div>
-                        <span className="text-xs text-slate-500 dark:text-slate-400">
-                          {new Date(event.timestamp).toLocaleString()}
+                      <div className="font-semibold truncate">{crisis.title}</div>
+                      <div className="text-xs opacity-75">{crisis.location}</div>
+                      <div className="text-xs mt-1">
+                        <span className={`px-2 py-0.5 rounded inline-block ${getStatusColor(crisis.status)}`}>
+                          {crisis.status}
                         </span>
                       </div>
-                      <p className="text-sm text-slate-700 dark:text-slate-300 mb-1">
-                        <span className="font-semibold">Location:</span> {event.location}
-                      </p>
-                      <p className="text-sm text-slate-600 dark:text-slate-400">
-                        {event.description}
-                      </p>
-                    </div>
+                    </li>
                   ))}
-                </div>
+                </ul>
               )}
             </div>
           </div>
 
-          {/* Situation State Sidebar */}
-          <div className="lg:col-span-1">
-            <div className="bg-white dark:bg-slate-900 rounded-lg shadow-sm border border-slate-200 dark:border-slate-800 p-6 sticky top-6">
-              <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-4 flex items-center">
-                <span className="text-2xl mr-2">🏁</span>
-                Status
-              </h2>
+          {/* Middle/Right: Create Form or Crisis Detail */}
+          {showCreateForm ? (
+            <div className="lg:col-span-2">
+              <div className="card p-6">
+                <h2 className="text-2xl font-bold mb-4">Create Crisis</h2>
+                <form onSubmit={handleCreateCrisis} className="space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium">Type</label>
+                      <select
+                        value={createForm.type}
+                        onChange={(e) => setCreateForm({ ...createForm, type: e.target.value })}
+                        className="mt-1 block w-full p-2 border rounded"
+                      >
+                        {["FIRE", "MEDICAL", "TRAFFIC", "HAZMAT", "NATURAL_DISASTER", "SECURITY", "OTHER"].map(
+                          (t) => (
+                            <option key={t} value={t}>
+                              {t}
+                            </option>
+                          )
+                        )}
+                      </select>
+                    </div>
 
-              {!situation ? (
-                <div className="text-center py-8">
-                  <div className="animate-spin inline-block w-8 h-8 border-4 border-slate-300 border-t-blue-600 rounded-full"></div>
-                  <p className="mt-2 text-slate-500 dark:text-slate-400">Loading...</p>
+                    <div>
+                      <label className="block text-sm font-medium">Priority</label>
+                      <select
+                        value={createForm.priority}
+                        onChange={(e) => setCreateForm({ ...createForm, priority: e.target.value })}
+                        className="mt-1 block w-full p-2 border rounded"
+                      >
+                        {["ROUTINE", "URGENT", "EMERGENCY", "CRITICAL"].map((p) => (
+                          <option key={p} value={p}>
+                            {p}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium">Title</label>
+                    <input
+                      value={createForm.title}
+                      onChange={(e) => setCreateForm({ ...createForm, title: e.target.value })}
+                      required
+                      className="mt-1 block w-full p-2 border rounded"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium">Location</label>
+                    <input
+                      value={createForm.location}
+                      onChange={(e) => setCreateForm({ ...createForm, location: e.target.value })}
+                      required
+                      className="mt-1 block w-full p-2 border rounded"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium">Description</label>
+                    <textarea
+                      value={createForm.description}
+                      onChange={(e) => setCreateForm({ ...createForm, description: e.target.value })}
+                      rows={3}
+                      className="mt-1 block w-full p-2 border rounded"
+                    />
+                  </div>
+
+                  <button type="submit" className="btn btn-primary w-full">
+                    Create Crisis
+                  </button>
+                </form>
+              </div>
+            </div>
+          ) : selectedCrisis ? (
+            <div className="lg:col-span-2 space-y-6">
+              {/* Crisis Details */}
+              <div className="card p-6">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h2 className="text-2xl font-bold">{selectedCrisis.title}</h2>
+                    <p className="text-gray-600 text-sm">📍 {selectedCrisis.location}</p>
+                  </div>
+                  <div className="text-right">
+                    <span className={`inline-block px-3 py-1 rounded font-medium ${getStatusColor(selectedCrisis.status)}`}>
+                      {selectedCrisis.status}
+                    </span>
+                  </div>
                 </div>
-              ) : Object.entries(situation.statusByLocation).length === 0 ? (
-                <p className="text-slate-500 dark:text-slate-400 text-center py-4">
-                  No locations yet
-                </p>
-              ) : (
-                <div className="space-y-3">
-                  {Object.entries(situation.statusByLocation).map(([location, status]) => (
-                    <div
-                      key={location}
-                      className="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700"
+
+                <p className="text-gray-700 mb-4">{selectedCrisis.description}</p>
+
+                <div className="grid grid-cols-2 gap-4 mb-6 text-sm">
+                  <div>
+                    <p className="text-gray-600">Type</p>
+                    <p className="font-semibold">{selectedCrisis.type}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-600">Priority</p>
+                    <p className="font-semibold">{selectedCrisis.priority}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-600">Created</p>
+                    <p className="text-xs">{new Date(selectedCrisis.createdAt).toLocaleString()}</p>
+                  </div>
+                  {selectedCrisis.resolvedAt && (
+                    <div>
+                      <p className="text-gray-600">Resolved</p>
+                      <p className="text-xs">{new Date(selectedCrisis.resolvedAt).toLocaleString()}</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Update Controls */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Update Status</label>
+                    <select
+                      value={selectedCrisis.status}
+                      onChange={(e) => handleUpdateStatus(selectedCrisis.id, e.target.value)}
+                      className="w-full p-2 border rounded text-sm"
                     >
-                      <p className="text-sm font-semibold text-slate-900 dark:text-white mb-1">
-                        {location}
-                      </p>
-                      <p className={`text-sm ${getStatusColor(status)}`}>
-                        {status}
-                      </p>
-                    </div>
-                  ))}
+                      {["OPEN", "ONGOING", "RESOLVED", "CLOSED", "ARCHIVED"].map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Update Priority</label>
+                    <select
+                      value={selectedCrisis.priority}
+                      onChange={(e) => handleUpdatePriority(selectedCrisis.id, e.target.value)}
+                      className="w-full p-2 border rounded text-sm"
+                    >
+                      {["ROUTINE", "URGENT", "EMERGENCY", "CRITICAL"].map((p) => (
+                        <option key={p} value={p}>
+                          {p}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
-              )}
+              </div>
+
+              {/* Add Event Form */}
+              <div className="card p-6">
+                <h3 className="font-semibold mb-4">Add Event</h3>
+                <form onSubmit={handleAddEvent} className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium">Event Type</label>
+                      <select
+                        value={eventForm.type}
+                        onChange={(e) => setEventForm({ ...eventForm, type: e.target.value })}
+                        className="mt-1 block w-full p-2 border rounded text-sm"
+                      >
+                        {[
+                          "DISPATCH",
+                          "ARRIVED",
+                          "TREATING",
+                          "PATIENT_TRANSPORTED",
+                          "DELIVERED",
+                          "INCIDENT_CLOSED",
+                          "RESOURCE_REQUEST",
+                          "STATUS_UPDATE",
+                          "ESCALATION",
+                          "DEESCALATION",
+                        ].map((t) => (
+                          <option key={t} value={t}>
+                            {t}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium">Severity</label>
+                      <select
+                        value={eventForm.severity}
+                        onChange={(e) => setEventForm({ ...eventForm, severity: e.target.value })}
+                        className="mt-1 block w-full p-2 border rounded text-sm"
+                      >
+                        {["LOW", "MEDIUM", "HIGH", "CRITICAL"].map((s) => (
+                          <option key={s} value={s}>
+                            {s}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium">Description</label>
+                    <input
+                      value={eventForm.description}
+                      onChange={(e) => setEventForm({ ...eventForm, description: e.target.value })}
+                      required
+                      className="mt-1 block w-full p-2 border rounded text-sm"
+                    />
+                  </div>
+
+                  <button type="submit" className="btn btn-success w-full">
+                    Add Event
+                  </button>
+                </form>
+              </div>
+
+              {/* Events List */}
+              <div className="card p-6">
+                <h3 className="font-semibold mb-4">Events ({events.length})</h3>
+                {events.length === 0 ? (
+                  <p className="text-sm text-gray-500">No events yet</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {events.map((ev) => (
+                      <li key={ev.id} className="p-3 border rounded text-sm">
+                        <div className="flex justify-between items-start mb-1">
+                          <span className="font-semibold">{ev.type}</span>
+                          {ev.severity && <span className={`px-2 py-0.5 rounded text-xs ${getSeverityColor(ev.severity)}`}>{ev.severity}</span>}
+                        </div>
+                        <p className="text-gray-700">{ev.description}</p>
+                        <p className="text-xs text-gray-500 mt-1">{new Date(ev.timestamp).toLocaleString()}</p>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="lg:col-span-2 bg-white rounded shadow p-6 flex items-center justify-center h-96">
+              <p className="text-gray-500">Valitse kriisi listasta</p>
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
 }
-
-export default App;
-
-
-

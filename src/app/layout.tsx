@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Event Tracker",
-  description: "Track events seamlessly with our intuitive event tracking application.",
+  title: "Crisis Event Tracker",
+  description: "Track crisis events seamlessly with our intuitive crisis event tracking application.",
 };
 
 export default function RootLayout({
@@ -25,7 +25,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased app`}
       >
         {children}
       </body>
