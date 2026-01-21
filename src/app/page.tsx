@@ -84,10 +84,16 @@ export default function Page() {
       if (!crisisRes.ok || !eventsRes.ok) throw new Error("Failed to fetch");
 
       const crisis = await crisisRes.json();
-      const eventsData = await eventsRes.json();
+      const eventsResponse = await eventsRes.json();
 
       setSelectedCrisis(crisis);
-      setEvents(Array.isArray(eventsData) ? eventsData : []);
+      
+      // API returns array of events directly
+      if (Array.isArray(eventsResponse)) {
+        setEvents(eventsResponse);
+      } else {
+        setEvents([]);
+      }
     } catch (err) {
       console.error("fetchCrisisDetail:", err);
       setError("Failed to load crisis details");
