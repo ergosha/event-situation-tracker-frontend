@@ -63,10 +63,38 @@ src/
   app/
     globals.css       # Global styles and Tailwind utilities
     layout.tsx        # Root layout with font configuration
-    page.tsx          # Main crisis tracker page
+    page.tsx          # Main page - orchestration logic only
+  components/         # Reusable React components
+    AddEventForm.tsx
+    CreateCrisisForm.tsx
+    CrisisDetailView.tsx
+    CrisisDetailsCard.tsx
+    CrisisListItem.tsx
+    CrisisListPanel.tsx
+    CrisisUpdateControls.tsx
+    ErrorDisplay.tsx
+    EventItem.tsx
+    EventsList.tsx
+    StatusFilter.tsx
+  config/
+    api.ts            # API base URL configuration
+  constants/
+    crisis.ts         # Crisis types, statuses, priorities, event types
+  types/
+    crisis.ts         # Crisis and CrisisEvent type definitions
+    forms.ts          # Form data interfaces
+  utils/
+    styleHelpers.ts   # Reusable styling functions
   styles/             # Additional style modules
 public/               # Static assets
 ```
+
+### Architecture
+The application follows a modular component architecture:
+- **12 focused components** with single responsibilities
+- **Centralized types** for type safety across the app
+- **Utility functions** for reusable logic (styling, API config)
+- **Separation of concerns** - UI components, business logic, and types are isolated
 
 ## API Integration
 ---------------
@@ -80,10 +108,24 @@ The application integrates with the following backend endpoints:
 - `GET /api/crises/{id}/events` - Get events for a crisis
 - `POST /api/crises/{id}/events` - Add event to crisis
 
-## UI Components
--------------
-- **Crisis List**: Sidebar with filterable crisis cards
-- **Crisis Form**: Modal form for creating new crises
-- **Crisis Details**: Detailed view with status and priority controls
-- **Event Form**: Add new events to selected crisis
-- **Event Timeline**: Chronological list of crisis events
+## Component Overview
+------------------
+
+### Layout Components
+- **CrisisListPanel**: Left sidebar with status filtering and crisis list
+- **CrisisDetailView**: Right panel orchestrating crisis details and events
+- **ErrorDisplay**: Global error message banner
+
+### Crisis Components
+- **CrisisListItem**: Individual crisis card with priority-based styling
+- **CrisisDetailsCard**: Full crisis information display
+- **CrisisUpdateControls**: Status and priority update selectors
+- **CreateCrisisForm**: Form for creating new crisis entries
+
+### Event Components
+- **AddEventForm**: Form for adding events to a crisis
+- **EventsList**: Container for event timeline
+- **EventItem**: Individual event card with severity badges
+
+### UI Components
+- **StatusFilter**: Filter buttons for crisis status
